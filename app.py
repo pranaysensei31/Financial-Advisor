@@ -67,7 +67,7 @@ def is_clean(text: str):
 
 
 def extract_tickers(query: str):
-    raw = re.findall(r"\b[A-Za-z]{1,12}(?:\.[A-Za-z]{1,5})?\b", query)
+    raw = re.findall(r"\b[A-Za-z]{1,12}(?:\.[A-Za-z]{1,6})?\b", query)
 
     blacklist = {
         "and", "the", "with", "show", "what", "this", "that",
@@ -80,7 +80,7 @@ def extract_tickers(query: str):
         r_clean = r.upper()
         if r_clean.lower() in blacklist:
             continue
-        if re.match(r"^[A-Z]{1,12}(\.[A-Z]{1,5})?$", r_clean):
+        if re.match(r"^[A-Z]{1,12}(\.[A-Z]{1,6})?$", r_clean):
             tickers.append(r_clean)
 
     return list(dict.fromkeys(tickers))
@@ -136,6 +136,187 @@ def max_drawdown(df: pd.DataFrame) -> float:
     return mdd
 
 
+def format_market_cap(x):
+    try:
+        if x is None or (isinstance(x, float) and np.isnan(x)):
+            return "N/A"
+        x = float(x)
+        if x >= 1e12:
+            return f"{x/1e12:.2f}T"
+        if x >= 1e9:
+            return f"{x/1e9:.2f}B"
+        if x >= 1e6:
+            return f"{x/1e6:.2f}M"
+        return f"{x:.0f}"
+    except Exception:
+        return "N/A"
+
+
+def get_stock_summary(ticker: str) -> dict:
+    if not YF_AVAILABLE:
+        return {}
+
+    try:
+        tk = yf.Ticker(ticker)
+        info = tk.info or {}
+
+        return {
+            "ticker": ticker,
+            "name": info.get("longName") or info.get("shortName") or ticker,
+            "sector": info.get("sector", "N/A"),
+            "industry": info.get("industry", "N/A"),
+            "market_cap": info.get("marketCap"),
+            "pe": info.get("trailingPE"),
+            "52w_high": info.get("fiftyTwoWeekHigh"),
+            "52w_low": info.get("fiftyTwoWeekLow"),
+            "website": info.get("website"),
+            "exchange": info.get("exchange"),
+            "currency": info.get("currency"),
+        }
+    except Exception:
+        return {}
+
+
+def get_stock_news(ticker: str, limit: int = 10) -> list:
+    if not YF_AVAILABLE:
+        return []
+
+    try:
+        tk = yf.Ticker(ticker)
+
+        if hasattr(tk, "get_news"):
+            news = tk.get_news() or []
+        else:
+            news = tk.news or []
+
+        return news[:limit]
+    except Exception:
+        return []
+
+
+def simple_sentiment_score(text: str) -> float:
+    if not text:
+        return 0.0
+
+    positive = {"up", "gain", "bull", "surge", "jump", "growth", "beat", "record", "strong", "profit"}
+    negative = {"down", "loss", "bear", "drop", "fall", "decline", "miss", "weak", "crash", "lawsuit"}
+
+    words = re.findall(r"[a-zA-Z']+", text.lower())
+    if not words:
+        return 0.0
+
+    pos = sum(1 for w in words if w in positive)
+    neg = sum(1 for w in words if w in negative)
+
+    return (pos - neg) / max(1, pos + neg)
+
+
+def get_live_quote(ticker: str) -> dict:
+    if not YF_AVAILABLE:
+        return {}
+
+    try:
+        tk = yf.Ticker(ticker)
+        hist = tk.history(period="2d", interval="1d")
+        if hist is None or hist.empty:
+            return {}
+
+        last_close = float(hist["Close"].iloc[-1])
+        prev_close = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else last_close
+
+        change = last_close - prev_close
+        change_pct = (change / prev_close) * 100 if prev_close != 0 else 0.0
+
+        info = tk.info or {}
+        volume = info.get("volume", None)
+        currency = info.get("currency", "")
+
+        return {
+            "ticker": ticker,
+            "price": last_close,
+            "prev_close": prev_close,
+            "change": change,
+            "change_pct": change_pct,
+            "volume": volume,
+            "currency": currency,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    except Exception:
+        return {}
+
+
+def safe_float(x, default=None):
+    try:
+        return float(x)
+    except Exception:
+        return default
+
+
+def parse_portfolio_input(text: str):
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    items = []
+    for ln in lines:
+        parts = ln.split()
+        if len(parts) != 2:
+            continue
+        t = parts[0].upper().strip()
+        w = safe_float(parts[1], None)
+        if w is None:
+            continue
+        items.append((t, w))
+
+    if not items:
+        return [], np.array([])
+
+    tickers = [t for t, _ in items]
+    weights = np.array([w for _, w in items], dtype=float)
+
+    if weights.sum() <= 0:
+        return [], np.array([])
+
+    weights = weights / weights.sum()
+    return tickers, weights
+
+
+def portfolio_metrics(tickers: list, weights: np.ndarray, days: int = 90):
+    if len(tickers) == 0:
+        return {}
+
+    price_df = pd.DataFrame()
+
+    for t in tickers:
+        df = fetch_prices(t, days)
+        df = df.rename(columns={"close": t})
+        df = df.set_index("date")
+        price_df = df[[t]] if price_df.empty else price_df.join(df[[t]], how="outer")
+
+    price_df = price_df.dropna()
+    if price_df.empty or len(price_df) < 7:
+        return {}
+
+    returns = price_df.pct_change().dropna()
+    w = np.array(weights, dtype=float)
+
+    port_returns = returns.dot(w)
+
+    vol = float(port_returns.std() * math.sqrt(252))
+    sr = float(sharpe_ratio(port_returns))
+    total_return = float((1 + port_returns).prod() - 1)
+
+    contrib = returns.mean() * w
+    top_contrib = contrib.idxmax()
+    worst_contrib = contrib.idxmin()
+
+    return {
+        "volatility": vol,
+        "sharpe": sr,
+        "total_return": total_return,
+        "top_contributor": top_contrib,
+        "worst_contributor": worst_contrib,
+        "returns_series": port_returns
+    }
+
+
 def router(state: AgentState) -> AgentState:
     state["log_steps"].append("Visited: router")
     state["next"] = {
@@ -177,12 +358,12 @@ def analyze_stock_risk_trends(state: AgentState) -> AgentState:
     summary = (
         f"## Risk Analysis\n\n"
         f"**Ticker:** {ticker}\n\n"
-        f"**Current Price:** {current_price:.2f} (as of {latest_date})\n\n"
+        f"**Last Close:** {current_price:.2f} (as of {latest_date})\n\n"
         f"- Annualized Volatility: **{vol:.2%}**\n"
         f"- Max Drawdown: **{mdd:.2%}**\n"
         f"- Sharpe Ratio: **{sr:.2f}**\n"
         f"- Risk Level: **{risk_label}**\n\n"
-        f"Interpretation: higher volatility and drawdown indicates higher risk."
+        f"Interpretation: Higher volatility and deeper drawdown indicates higher risk."
     )
 
     return {**state, "response": summary}
@@ -193,7 +374,7 @@ def compare_stocks(state: AgentState) -> AgentState:
 
     tickers = extract_tickers(state["query"])
     if len(tickers) < 2:
-        return {**state, "response": "Please enter at least 2 tickers for comparison (example: AAPL TSLA)."}
+        return {**state, "response": "Enter at least 2 tickers for comparison. Example: AAPL TSLA"}
 
     days = state["days"]
     rows = []
@@ -203,13 +384,14 @@ def compare_stocks(state: AgentState) -> AgentState:
         rets = compute_returns(df)
         rows.append({
             "Ticker": t,
-            "Current Price": float(df["close"].iloc[-1]),
+            "Last Close": float(df["close"].iloc[-1]),
             "Volatility": float(rets.std() * math.sqrt(252)),
             "Sharpe": float(sharpe_ratio(rets)),
             "Max Drawdown": float(max_drawdown(df)),
         })
 
     comp = pd.DataFrame(rows).sort_values(by="Sharpe", ascending=False)
+
     best = comp.iloc[0]["Ticker"]
     worst = comp.iloc[-1]["Ticker"]
 
@@ -297,11 +479,11 @@ def respond_llm(state: AgentState) -> AgentState:
     state["log_steps"].append("Visited: respond_llm")
 
     if not GROQ_AVAILABLE:
-        return {**state, "response": state["response"] + "\n\nNote: LLM advisory disabled (langchain_groq not installed)."}
+        return {**state, "response": state["response"]}
 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     if GROQ_API_KEY.strip() == "":
-        return {**state, "response": state["response"] + "\n\nNote: LLM advisory disabled (GROQ_API_KEY not set)."}
+        return {**state, "response": state["response"]}
 
     try:
         chat = ChatGroq(
@@ -316,7 +498,7 @@ User Query: {state['query']}
 Mode: {state['mode']}
 Data Summary: {state['response']}
 
-Give a clear, respectful summary and a direct recommendation in short bullet points.
+Give a clear summary and recommendation in short bullet points.
 Avoid strong financial guarantees.
 """
 
@@ -328,8 +510,8 @@ Avoid strong financial guarantees.
 
         return {**state, "response": result}
 
-    except Exception as e:
-        return {**state, "response": f"LLM advisory failed: {e}"}
+    except Exception:
+        return {**state, "response": state["response"]}
 
 
 builder = StateGraph(AgentState)
@@ -357,6 +539,30 @@ builder.add_edge("csv_report", END)
 
 graph = builder.compile()
 
+
+SMART_TICKERS = {
+    "Apple": "AAPL",
+    "Tesla": "TSLA",
+    "Microsoft": "MSFT",
+    "NVIDIA": "NVDA",
+    "Amazon": "AMZN",
+    "Google": "GOOGL",
+    "Meta": "META",
+    "TCS": "TCS.NS",
+    "Infosys": "INFY.NS",
+    "Reliance": "RELIANCE.NS",
+    "HDFC Bank": "HDFCBANK.NS",
+    "ICICI Bank": "ICICIBANK.NS",
+    "Zomato": "ZOMATO.NS",
+}
+
+
+st.set_page_config(
+    page_title="FinSight | AI Financial Advisor",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 st.markdown("""
 <style>
@@ -475,11 +681,25 @@ st.markdown("""
         transition: 0.2s;
         width: 100%;
     }
+
+    div[data-testid="stMetricLabel"] * {
+        color: rgba(255, 255, 255, 0.80) !important;
+        font-weight: 700 !important;
+    }
+    div[data-testid="stMetricValue"] * {
+        color: #FFFFFF !important;
+        font-weight: 900 !important;
+    }
+    div[data-testid="stMetricDelta"] * {
+        font-weight: 800 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
+
 if "chat_memory" not in st.session_state:
     st.session_state.chat_memory = []
+
 
 st.markdown("""
 <div class="nav">
@@ -498,19 +718,22 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
 st.markdown("""
 <div class="hero">
     <h1>Stock insights that feel effortless.</h1>
     <p>
-        Enter one or more tickers and run analysis instantly.
-        No command keywords needed. Export reports, visualize trends and compare risk metrics in one interface.
+        Enter tickers, view live prices, run risk analysis, compare instruments, visualize history and export datasets.
+        Portfolio mode helps evaluate combined risk and performance. Company overview and news improve decision-making.
     </p>
+    <span class="tag">Live prices</span>
+    <span class="tag">Portfolio mode</span>
+    <span class="tag">Smart search</span>
     <span class="tag">Risk analysis</span>
-    <span class="tag">Comparison</span>
-    <span class="tag">Visualization</span>
-    <span class="tag">CSV export</span>
+    <span class="tag">News & alerts</span>
 </div>
 """, unsafe_allow_html=True)
+
 
 left, right = st.columns([1.05, 1.65], gap="large")
 
@@ -518,21 +741,50 @@ with left:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.markdown('<div class="panel-title">Input</div>', unsafe_allow_html=True)
 
+    selected_company = st.selectbox(
+        "Quick search (optional)",
+        ["None"] + list(SMART_TICKERS.keys()),
+        index=0
+    )
+
+    if selected_company != "None":
+        default_q = SMART_TICKERS[selected_company]
+    else:
+        default_q = "AAPL TSLA"
+
     query = st.text_input(
         "Tickers",
-        value="AAPL TSLA",
-        placeholder="Example: AAPL | AAPL TSLA MSFT | TCS.NS INFY.NS"
+        value=default_q,
+        placeholder="Example: AAPL TSLA MSFT | TCS.NS INFY.NS"
     )
 
     days = st.slider("History window (days)", min_value=3, max_value=365, value=30)
 
-    tickers_preview = extract_tickers(query)
-    if tickers_preview:
-        st.caption("Detected tickers: " + ", ".join(tickers_preview[:10]))
+    preview = extract_tickers(query)
+    if preview:
+        st.caption("Detected tickers: " + ", ".join(preview[:10]))
     else:
         st.caption("Detected tickers: none")
 
+    if preview:
+        st.write("")
+        st.markdown("#### Live Prices")
+
+        cols = st.columns(min(4, len(preview)))
+        for i, t in enumerate(preview[:4]):
+            q = get_live_quote(t)
+            if not q:
+                cols[i].metric(label=t, value="N/A")
+            else:
+                delta_str = f"{q['change']:.2f} ({q['change_pct']:.2f}%)"
+                cols[i].metric(
+                    label=t,
+                    value=f"{q['price']:.2f} {q.get('currency','')}",
+                    delta=delta_str
+                )
+
     st.write("")
+    st.markdown("#### Actions")
 
     c1, c2 = st.columns(2)
     c3, c4 = st.columns(2)
@@ -552,13 +804,61 @@ with left:
     elif run_csv:
         mode = "csv_report"
 
+    st.write("")
+    st.markdown("#### Portfolio Mode")
+
+    portfolio_text = st.text_area(
+        "Portfolio input (ticker weight)",
+        value="AAPL 40\nTSLA 30\nMSFT 30",
+        height=120
+    )
+
+    run_portfolio = st.button("Run portfolio analysis")
+
     st.markdown('</div>', unsafe_allow_html=True)
+
 
 with right:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.markdown('<div class="panel-title">Results</div>', unsafe_allow_html=True)
 
-    if mode:
+    if run_portfolio:
+        ptickers, pweights = parse_portfolio_input(portfolio_text)
+
+        if len(ptickers) < 2:
+            st.error("Enter at least 2 tickers in portfolio mode.")
+        else:
+            with st.spinner("Analyzing portfolio..."):
+                pm = portfolio_metrics(ptickers, pweights, days=max(days, 90))
+
+            if not pm:
+                st.error("Not enough market data to compute portfolio metrics.")
+            else:
+                st.success("Portfolio analysis complete.")
+
+                a1, a2, a3, a4 = st.columns(4)
+                a1.metric("Volatility (annualized)", f"{pm['volatility']:.2%}")
+                a2.metric("Sharpe Ratio", f"{pm['sharpe']:.2f}")
+                a3.metric("Return (approx)", f"{pm['total_return']:.2%}")
+                a4.metric("Top Contributor", pm["top_contributor"])
+
+                st.caption(f"Worst contributor: {pm['worst_contributor']}")
+
+                figp = go.Figure()
+                figp.add_trace(go.Scatter(
+                    x=pm["returns_series"].index,
+                    y=(1 + pm["returns_series"]).cumprod(),
+                    mode="lines",
+                    name="Portfolio Growth"
+                ))
+                figp.update_layout(
+                    title="Portfolio Growth Curve",
+                    xaxis_title="Date",
+                    yaxis_title="Growth"
+                )
+                st.plotly_chart(figp, width="stretch")
+
+    elif mode:
         with st.spinner("Processing request..."):
             try:
                 result = graph.invoke({
@@ -572,6 +872,12 @@ with right:
                     "log_steps": []
                 })
 
+                tickers_found = extract_tickers(query)
+                primary = tickers_found[0] if tickers_found else None
+
+                meta = get_stock_summary(primary) if primary else {}
+                news_items = get_stock_news(primary, limit=10) if primary else []
+
                 st.session_state.chat_memory.append({
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "query": query,
@@ -579,14 +885,41 @@ with right:
                     "response": result["response"]
                 })
 
-                t1, t2, t3, t4 = st.tabs(["Summary", "Chart", "CSV", "Trace"])
+                t0, t1, t2, t3, t4, t5 = st.tabs(["Overview", "Summary", "Chart", "CSV", "News", "Trace"])
+
+                with t0:
+                    if primary and meta:
+                        st.subheader("Company Overview")
+
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric("Ticker", meta.get("ticker", "N/A"))
+                        m2.metric("Company", meta.get("name", "N/A"))
+                        m3.metric("Exchange", meta.get("exchange", "N/A"))
+                        m4.metric("Currency", meta.get("currency", "N/A"))
+
+                        m5, m6, m7, m8 = st.columns(4)
+                        m5.metric("Market Cap", format_market_cap(meta.get("market_cap")))
+
+                        pe_val = meta.get("pe")
+                        m6.metric("P/E Ratio", f"{pe_val:.2f}" if isinstance(pe_val, (int, float)) else "N/A")
+
+                        hi = meta.get("52w_high")
+                        lo = meta.get("52w_low")
+                        m7.metric("52W High", f"{hi:.2f}" if isinstance(hi, (int, float)) else "N/A")
+                        m8.metric("52W Low", f"{lo:.2f}" if isinstance(lo, (int, float)) else "N/A")
+
+                        st.caption(f"Sector: {meta.get('sector','N/A')} | Industry: {meta.get('industry','N/A')}")
+                        if meta.get("website"):
+                            st.caption(f"Website: {meta['website']}")
+                    else:
+                        st.info("No overview available. Enter a valid ticker like AAPL or TCS.NS.")
 
                 with t1:
                     st.markdown(result["response"])
 
                 with t2:
                     if result.get("fig") is not None:
-                        st.plotly_chart(result["fig"], use_container_width=True)
+                        st.plotly_chart(result["fig"], width="stretch")
                     else:
                         st.info("No chart generated for this action.")
 
@@ -602,6 +935,67 @@ with right:
                         st.info("No CSV generated for this action.")
 
                 with t4:
+                    if not primary:
+                        st.info("Enter at least one ticker to view news.")
+                    else:
+                        st.subheader("Latest News")
+
+                        if not news_items:
+                            st.info("No news available for this ticker (Yahoo sometimes returns empty).")
+                        else:
+                            for item in news_items:
+                                title = item.get("title", "Untitled")
+                                link = item.get("link", "")
+                                publisher = item.get("publisher", "Unknown")
+                                tstamp = item.get("providerPublishTime")
+
+                                score = simple_sentiment_score(title)
+                                if score > 0.2:
+                                    label = "Positive"
+                                elif score < -0.2:
+                                    label = "Negative"
+                                else:
+                                    label = "Neutral"
+
+                                date_text = ""
+                                try:
+                                    date_text = datetime.fromtimestamp(tstamp).strftime("%Y-%m-%d %H:%M")
+                                except Exception:
+                                    pass
+
+                                st.markdown(f"**{title}**")
+                                st.caption(f"{publisher} {('| ' + date_text) if date_text else ''} | Sentiment: {label}")
+                                if link:
+                                    st.markdown(link)
+                                st.divider()
+
+                        st.subheader("Alerts")
+                        try:
+                            df_alert = fetch_prices(primary, max(days, 30))
+                            rets_alert = compute_returns(df_alert)
+
+                            if len(rets_alert) >= 5:
+                                last_return = float(rets_alert.iloc[-1])
+                                vol = float(rets_alert.std() * math.sqrt(252))
+
+                                any_alert = False
+
+                                if abs(last_return) > 0.05:
+                                    st.warning("High daily movement detected in the latest session.")
+                                    any_alert = True
+
+                                if vol > 0.45:
+                                    st.warning("Volatility is very high. This instrument may be risky in short-term.")
+                                    any_alert = True
+
+                                if not any_alert:
+                                    st.success("No major alerts detected.")
+                            else:
+                                st.info("Not enough data to generate alerts.")
+                        except Exception:
+                            st.info("Alerts unavailable for this ticker.")
+
+                with t5:
                     if result.get("log_steps"):
                         for step in result["log_steps"]:
                             st.markdown(f"- {step}")
@@ -611,9 +1005,10 @@ with right:
             except Exception as e:
                 st.error(f"Application error: {e}")
     else:
-        st.info("Enter tickers on the left and select an action.")
+        st.info("Enter tickers and select an action, or use portfolio mode.")
 
     st.markdown('</div>', unsafe_allow_html=True)
+
 
 st.write("")
 with st.expander("Recent activity", expanded=False):
@@ -627,3 +1022,4 @@ with st.expander("Recent activity", expanded=False):
             st.markdown("---")
 
 st.caption("FinSight • AI Financial Advisor • Streamlit + LangGraph")
+
