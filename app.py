@@ -388,59 +388,382 @@ builder.add_edge("visualize", END)
 graph = builder.compile()
 
 
-st.set_page_config(page_title="📈 AI Financial Agent", layout="centered")
-st.title("📈 AI Financial Advisor (Working LangGraph Version)")
+st.set_page_config(
+    page_title="FinSight | AI Financial Advisor",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+st.markdown("""
+<style>
+    .stApp {
+        background: radial-gradient(circle at 10% 0%, #0b1220 0%, #050814 40%, #050814 100%);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        color: #E5E7EB;
+    }
+
+    /* Remove Streamlit default paddings */
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 2.5rem !important;
+        max-width: 1300px;
+    }
+
+    /* Navbar */
+    .nav {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        padding: 14px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 15px 40px rgba(0,0,0,0.25);
+        backdrop-filter: blur(10px);
+        margin-bottom: 18px;
+    }
+    .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .brand-badge {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #22C55E, #3B82F6);
+        box-shadow: 0 0 0 6px rgba(34,197,94,0.10);
+    }
+    .brand-title {
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 0.2px;
+        color: #F9FAFB;
+        margin: 0;
+        line-height: 1;
+    }
+    .brand-subtitle {
+        margin: 0;
+        color: rgba(229,231,235,0.7);
+        font-size: 12px;
+        line-height: 1.2;
+    }
+    .nav-right {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: rgba(229,231,235,0.85);
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(255,255,255,0.05);
+    }
+
+    /* Hero */
+    .hero {
+        border-radius: 26px;
+        padding: 28px 28px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%);
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+        margin-bottom: 18px;
+    }
+    .hero h1 {
+        font-size: 46px;
+        font-weight: 950;
+        line-height: 1.05;
+        margin: 0 0 10px 0;
+        color: #F9FAFB;
+        letter-spacing: -0.8px;
+    }
+    .hero p {
+        margin: 0;
+        font-size: 15px;
+        color: rgba(229,231,235,0.78);
+        line-height: 1.6;
+        max-width: 850px;
+    }
+    .hero-tags {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .tag {
+        padding: 9px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(255,255,255,0.05);
+        font-size: 12px;
+        font-weight: 700;
+        color: rgba(229,231,235,0.9);
+    }
+
+    /* Cards grid */
+    .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+        margin-bottom: 18px;
+    }
+    .feature-card {
+        border-radius: 22px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        padding: 16px 18px;
+        box-shadow: 0 16px 45px rgba(0,0,0,0.25);
+    }
+    .feature-title {
+        font-size: 14px;
+        font-weight: 900;
+        margin: 0 0 4px 0;
+        color: #F9FAFB;
+        letter-spacing: -0.2px;
+    }
+    .feature-desc {
+        font-size: 13px;
+        margin: 0;
+        color: rgba(229,231,235,0.72);
+        line-height: 1.5;
+    }
+
+    /* Input / Output panels */
+    .panel {
+        border-radius: 26px;
+        padding: 18px 18px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    }
+    .panel-title {
+        font-size: 15px;
+        font-weight: 950;
+        margin: 0 0 12px 0;
+        color: #F9FAFB;
+    }
+
+    /* Inputs */
+    div[data-baseweb="input"] > div {
+        border-radius: 16px !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        background: rgba(0,0,0,0.25) !important;
+        color: #E5E7EB !important;
+    }
+    div[data-baseweb="select"] > div {
+        border-radius: 16px !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+        background: rgba(0,0,0,0.25) !important;
+        color: #E5E7EB !important;
+    }
+
+    /* Run button */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 16px;
+        height: 52px;
+        font-size: 15px;
+        font-weight: 950;
+        color: #0B1220;
+        background: linear-gradient(135deg, #22C55E 0%, #3B82F6 100%);
+        border: none;
+        box-shadow: 0 18px 45px rgba(34,197,94,0.12);
+        transition: 0.2s;
+    }
+    div.stButton > button:hover {
+        transform: translateY(-1px);
+        opacity: 0.98;
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 999px !important;
+        border: 1px solid rgba(255,255,255,0.10) !important;
+        background: rgba(255,255,255,0.05) !important;
+        padding: 10px 14px !important;
+        color: rgba(229,231,235,0.9) !important;
+        font-weight: 800 !important;
+    }
+
+    /* Footer */
+    .footer {
+        margin-top: 20px;
+        color: rgba(229,231,235,0.55);
+        font-size: 12px;
+        text-align: center;
+    }
+
+    @media (max-width: 1100px) {
+        .grid { grid-template-columns: 1fr; }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 if "chat_memory" not in st.session_state:
     st.session_state.chat_memory = []
 
-with st.sidebar.expander("🧠 Chat History", expanded=True):
+st.markdown("""
+<div class="nav">
+    <div class="brand">
+        <div class="brand-badge"></div>
+        <div>
+            <p class="brand-title">FinSight</p>
+            <p class="brand-subtitle">AI financial advisor</p>
+        </div>
+    </div>
+    <div class="nav-right">
+        <div class="pill">Data: Yahoo Finance</div>
+        <div class="pill">Workflow: LangGraph</div>
+        <div class="pill">UI: Streamlit</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="hero">
+    <h1>Smart, fast and clean stock insights.</h1>
+    <p>
+        FinSight is a production-ready AI agent interface for stock risk analysis, comparison, visualization,
+        and CSV reporting. Powered by real historical market data with an optional LLM advisory layer.
+    </p>
+    <div class="hero-tags">
+        <span class="tag">Risk analysis</span>
+        <span class="tag">Stock comparison</span>
+        <span class="tag">Trend visualization</span>
+        <span class="tag">CSV reporting</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="grid">
+  <div class="feature-card">
+    <div class="feature-title">Risk Engine</div>
+    <p class="feature-desc">Annualized volatility, Sharpe ratio and max drawdown to understand risk clearly.</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-title">Comparison Suite</div>
+    <p class="feature-desc">Compare up to 5 instruments with consistent metrics and clear ranking.</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-title">Reporting</div>
+    <p class="feature-desc">Export CSV datasets for your documentation, analysis or project submission.</p>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+left, right = st.columns([1.05, 1.55], gap="large")
+
+with left:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-title">Run analysis</div>', unsafe_allow_html=True)
+
+    query = st.text_input(
+        label="Query",
+        value="Compare AAPL and TSLA",
+        placeholder="Example: Analyze AAPL | Compare AAPL TSLA MSFT | Show TCS.NS INFY.NS"
+    )
+
+    mode = st.selectbox(
+        "Mode",
+        ["risk_analysis", "comparison", "visualization", "csv_report"],
+        index=1
+    )
+
+    days = st.slider("History (days)", min_value=3, max_value=365, value=30)
+
+    st.write("")
+    run = st.button("Run")
+
+    st.write("")
+    st.markdown("**Examples**")
+    st.code("Analyze AAPL", language="text")
+    st.code("Compare AAPL TSLA MSFT", language="text")
+    st.code("Show TCS.NS INFY.NS", language="text")
+    st.code("CSV report for AAPL TSLA", language="text")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with right:
+    st.markdown('<div class="panel">', unsafe_allow_html=True)
+    st.markdown('<div class="panel-title">Results</div>', unsafe_allow_html=True)
+
+    if run:
+        with st.spinner("Processing request..."):
+            try:
+                result = graph.invoke({
+                    "query": query,
+                    "mode": mode,
+                    "days": days,
+                    "response": "",
+                    "csv": "",
+                    "fig": None,
+                    "next": "",
+                    "log_steps": []
+                })
+
+                st.session_state.chat_memory.append({
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "query": query,
+                    "mode": mode,
+                    "response": result["response"]
+                })
+
+                st.success("Completed successfully.")
+
+                t1, t2, t3, t4 = st.tabs(["Summary", "Chart", "CSV", "Trace"])
+
+                with t1:
+                    st.markdown(result["response"])
+
+                with t2:
+                    if result.get("fig") is not None:
+                        st.plotly_chart(result["fig"], use_container_width=True)
+                    else:
+                        st.info("No chart generated for this mode.")
+
+                with t3:
+                    if result.get("csv"):
+                        st.download_button(
+                            "Download report.csv",
+                            data=result["csv"],
+                            file_name="report.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No CSV generated for this mode.")
+
+                with t4:
+                    if result.get("log_steps"):
+                        for step in result["log_steps"]:
+                            st.markdown(f"- {step}")
+                    else:
+                        st.info("No trace available.")
+
+            except Exception as e:
+                st.error(f"Application error: {e}")
+
+    else:
+        st.info("Enter a query on the left and run analysis to view results.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.write("")
+with st.expander("Recent activity", expanded=False):
     if len(st.session_state.chat_memory) == 0:
-        st.info("No history yet.")
-    for chat in st.session_state.chat_memory[::-1]:
-        st.markdown(f"🕒 {chat['timestamp']}")
-        st.markdown(f"**Query:** {chat['query']}")
-        st.markdown(f"**Mode:** {chat['mode']}")
-        st.markdown(f"**Response:** {chat['response'][:200]}...")
-        st.markdown("---")
+        st.info("No activity yet.")
+    else:
+        for chat in st.session_state.chat_memory[::-1][:10]:
+            st.markdown(f"**{chat['timestamp']}**")
+            st.markdown(f"Mode: `{chat['mode']}`")
+            st.markdown(f"Query: `{chat['query']}`")
+            st.markdown("---")
 
-query = st.text_input("💬 Enter your query", "Analyze AAPL and TSLA")
-mode = st.selectbox("🧭 Mode", ["risk_analysis", "comparison", "csv_report", "visualization"])
-days = st.slider("📆 Days", min_value=3, max_value=365, value=30)
-
-if st.button("🚀 Run Agent"):
-    with st.spinner("Processing..."):
-        try:
-            result = graph.invoke({
-                "query": query,
-                "mode": mode,
-                "days": days,
-                "response": "",
-                "csv": "",
-                "fig": None,
-                "next": "",
-                "log_steps": []
-            })
-
-            st.session_state.chat_memory.append({
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "query": query,
-                "mode": mode,
-                "response": result["response"]
-            })
-
-            st.markdown(result["response"])
-
-            if result.get("fig") is not None:
-                st.plotly_chart(result["fig"], use_container_width=True)
-
-            if result.get("csv"):
-                st.download_button("📥 Download CSV", result["csv"], "report.csv")
-
-            if result.get("log_steps"):
-                with st.expander("⚙️ Execution Trace"):
-                    for step in result["log_steps"]:
-                        st.markdown(f"- {step}")
-
-        except Exception as e:
-            st.error(f"App error: {e}")
+st.markdown('<div class="footer">FinSight • AI Financial Advisor • Streamlit + LangGraph</div>', unsafe_allow_html=True)
