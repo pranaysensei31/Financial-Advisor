@@ -564,18 +564,25 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# IMPORTANT FIX: session state init
+if "chat_memory" not in st.session_state:
+    st.session_state["chat_memory"] = []
+
+
 st.markdown("""
 <style>
     .stApp {
         background: radial-gradient(circle at 10% 0%, #0b1220 0%, #050814 45%, #050814 100%);
         font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-        color: #E5E7EB;
+        color: #FFFFFF;
     }
+
     .block-container {
         max-width: 1300px;
         padding-top: 1.2rem;
         padding-bottom: 2.5rem;
     }
+
     .nav {
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -588,11 +595,13 @@ st.markdown("""
         backdrop-filter: blur(10px);
         margin-bottom: 18px;
     }
+
     .brand {
         display: flex;
         align-items: center;
         gap: 10px;
     }
+
     .brand-badge {
         width: 34px;
         height: 34px;
@@ -600,19 +609,22 @@ st.markdown("""
         background: linear-gradient(135deg, #22C55E, #3B82F6);
         box-shadow: 0 0 0 6px rgba(34,197,94,0.10);
     }
+
     .brand-title {
         font-size: 18px;
         font-weight: 900;
-        color: #F9FAFB;
+        color: #FFFFFF;
         margin: 0;
         line-height: 1;
     }
+
     .brand-subtitle {
         margin: 0;
-        color: rgba(229,231,235,0.65);
+        color: rgba(255,255,255,0.78);
         font-size: 12px;
         line-height: 1.2;
     }
+
     .pill {
         padding: 8px 12px;
         border-radius: 999px;
@@ -620,8 +632,9 @@ st.markdown("""
         background: rgba(255,255,255,0.05);
         font-size: 12px;
         font-weight: 800;
-        color: rgba(229,231,235,0.9);
+        color: rgba(255,255,255,0.9);
     }
+
     .hero {
         border-radius: 26px;
         padding: 28px 28px;
@@ -630,21 +643,24 @@ st.markdown("""
         box-shadow: 0 20px 60px rgba(0,0,0,0.35);
         margin-bottom: 18px;
     }
+
     .hero h1 {
         font-size: 46px;
         font-weight: 950;
         line-height: 1.05;
         margin: 0 0 10px 0;
-        color: #F9FAFB;
+        color: #FFFFFF;
         letter-spacing: -0.8px;
     }
+
     .hero p {
         margin: 0;
         font-size: 15px;
-        color: rgba(229,231,235,0.78);
+        color: rgba(255,255,255,0.82);
         line-height: 1.6;
         max-width: 850px;
     }
+
     .tag {
         padding: 9px 14px;
         border-radius: 999px;
@@ -652,11 +668,12 @@ st.markdown("""
         background: rgba(255,255,255,0.05);
         font-size: 12px;
         font-weight: 800;
-        color: rgba(229,231,235,0.9);
+        color: rgba(255,255,255,0.9);
         display: inline-block;
         margin-top: 12px;
         margin-right: 8px;
     }
+
     .panel {
         border-radius: 26px;
         padding: 18px 18px;
@@ -664,12 +681,14 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.08);
         box-shadow: 0 20px 60px rgba(0,0,0,0.35);
     }
+
     .panel-title {
         font-size: 15px;
         font-weight: 950;
-        color: #F9FAFB;
+        color: #FFFFFF;
         margin: 0 0 12px 0;
     }
+
     div.stButton > button {
         border-radius: 16px;
         height: 52px;
@@ -682,40 +701,71 @@ st.markdown("""
         width: 100%;
     }
 
-    div[data-testid="stMetricLabel"] * {
-        color: rgba(255, 255, 255, 0.80) !important;
-        font-weight: 700 !important;
-    }
-    div[data-testid="stMetricValue"] * {
+    div[data-testid="stWidgetLabel"] *,
+    div[data-testid="stSelectbox"] label,
+    div[data-testid="stTextInput"] label,
+    div[data-testid="stSlider"] label,
+    div[data-testid="stTextArea"] label {
         color: #FFFFFF !important;
+        opacity: 1 !important;
+        font-weight: 900 !important;
+        letter-spacing: 0.2px !important;
+    }
+
+    div[data-testid="stCaptionContainer"] {
+        color: rgba(255,255,255,0.92) !important;
+        opacity: 1 !important;
+        font-weight: 800 !important;
+    }
+
+    div[data-testid="stMetricLabel"] *,
+    div[data-testid="stMetricLabel"] p,
+    div[data-testid="stMetricLabel"] span {
+        color: #FFFFFF !important;
+        opacity: 1 !important;
         font-weight: 900 !important;
     }
+
+    div[data-testid="stMetricValue"] *,
+    div[data-testid="stMetricValue"] p,
+    div[data-testid="stMetricValue"] span {
+        color: #FFFFFF !important;
+        opacity: 1 !important;
+        font-weight: 950 !important;
+    }
+
     div[data-testid="stMetricDelta"] * {
+        font-weight: 900 !important;
+    }
+
+    button[data-baseweb="tab"] {
+        color: rgba(255,255,255,0.92) !important;
+        font-weight: 900 !important;
+    }
+
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #FFFFFF !important;
+        font-weight: 950 !important;
+    }
+
+    div[data-baseweb="tab-highlight"] {
+        background-color: #FFFFFF !important;
+    }
+
+    .stMarkdown, .stMarkdown * {
+        color: rgba(255,255,255,0.95) !important;
+    }
+
+    input, textarea {
+        color: #0B1220 !important;
+        font-weight: 900 !important;
+    }
+
+    ::placeholder {
+        color: rgba(11, 18, 32, 0.60) !important;
         font-weight: 800 !important;
     }
 </style>
-""", unsafe_allow_html=True)
-
-
-if "chat_memory" not in st.session_state:
-    st.session_state.chat_memory = []
-
-
-st.markdown("""
-<div class="nav">
-    <div class="brand">
-        <div class="brand-badge"></div>
-        <div>
-            <p class="brand-title">FinSight</p>
-            <p class="brand-subtitle">AI Financial Advisor</p>
-        </div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <div class="pill">Yahoo Finance</div>
-        <div class="pill">LangGraph</div>
-        <div class="pill">Streamlit</div>
-    </div>
-</div>
 """, unsafe_allow_html=True)
 
 
@@ -878,7 +928,7 @@ with right:
                 meta = get_stock_summary(primary) if primary else {}
                 news_items = get_stock_news(primary, limit=10) if primary else []
 
-                st.session_state.chat_memory.append({
+                st.session_state["chat_memory"].append({
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "query": query,
                     "mode": mode,
@@ -1012,14 +1062,13 @@ with right:
 
 st.write("")
 with st.expander("Recent activity", expanded=False):
-    if len(st.session_state.chat_memory) == 0:
+    if len(st.session_state["chat_memory"]) == 0:
         st.info("No activity yet.")
     else:
-        for chat in st.session_state.chat_memory[::-1][:10]:
+        for chat in st.session_state["chat_memory"][::-1][:10]:
             st.markdown(f"**{chat['timestamp']}**")
             st.markdown(f"Action: `{chat['mode']}`")
             st.markdown(f"Tickers: `{chat['query']}`")
             st.markdown("---")
 
 st.caption("FinSight • AI Financial Advisor • Streamlit + LangGraph")
-
