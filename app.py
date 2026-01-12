@@ -9,11 +9,9 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import TypedDict, List, Any
 
-
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableLambda
 from langchain_core.messages import HumanMessage
-
 
 try:
     from langchain_groq import ChatGroq
@@ -21,13 +19,11 @@ try:
 except Exception:
     GROQ_AVAILABLE = False
 
-
 try:
     import yfinance as yf
     YF_AVAILABLE = True
 except Exception:
     YF_AVAILABLE = False
-
 
 try:
     import nltk
@@ -35,7 +31,6 @@ try:
     NLTK_AVAILABLE = True
 except Exception:
     NLTK_AVAILABLE = False
-
 
 
 class AgentState(TypedDict):
@@ -49,13 +44,10 @@ class AgentState(TypedDict):
     log_steps: List[str]
 
 
+BAD_WORDS = {"kill", "suicide", "rape", "terrorist", "bomb", "porn"}
 
-BAD_WORDS = {
-    "kill", "suicide", "rape", "terrorist", "bomb", "porn"
-}
 
 def is_clean(text: str):
-    
     if not NLTK_AVAILABLE:
         lowered = text.lower()
         for w in BAD_WORDS:
@@ -63,7 +55,6 @@ def is_clean(text: str):
                 return False, w
         return True, ""
 
-    
     try:
         tokens = word_tokenize(text.lower())
     except Exception:
@@ -74,13 +65,14 @@ def is_clean(text: str):
             return False, t
     return True, ""
 
+
 def extract_tickers(query: str):
-    raw = re.findall(r"\b[A-Za-z]{1,10}(?:\.[A-Za-z]{1,5})?\b", query)
+    raw = re.findall(r"\b[A-Za-z]{1,12}(?:\.[A-Za-z]{1,5})?\b", query)
 
     blacklist = {
         "and", "the", "with", "show", "what", "this", "that",
         "csv", "report", "for", "give", "export", "generate", "data",
-        "analyze", "compare", "visualize", "plot", "trend"
+        "analyze", "compare", "visualize", "plot", "trend", "me", "please"
     }
 
     tickers = []
@@ -88,11 +80,10 @@ def extract_tickers(query: str):
         r_clean = r.upper()
         if r_clean.lower() in blacklist:
             continue
-        
-        if re.match(r"^[A-Z]{1,10}(\.[A-Z]{1,5})?$", r_clean):
+        if re.match(r"^[A-Z]{1,12}(\.[A-Z]{1,5})?$", r_clean):
             tickers.append(r_clean)
 
-    return list(dict.fromkeys(tickers))  
+    return list(dict.fromkeys(tickers))
 
 
 def fetch_prices(ticker: str, days: int) -> pd.DataFrame:
@@ -109,7 +100,6 @@ def fetch_prices(ticker: str, days: int) -> pd.DataFrame:
 
     df = df.reset_index()
 
-    
     if "Close" not in df.columns:
         raise ValueError(f"'Close' column missing for {ticker}. Columns: {df.columns}")
 
@@ -118,7 +108,6 @@ def fetch_prices(ticker: str, days: int) -> pd.DataFrame:
     df = df.dropna(subset=["close"])
 
     return df[["date", "close"]]
-
 
 
 def compute_returns(df: pd.DataFrame) -> pd.Series:
@@ -151,9 +140,9 @@ def router(state: AgentState) -> AgentState:
     state["log_steps"].append("Visited: router")
     state["next"] = {
         "risk_analysis": "analyze_risk",
-        "csv_report": "csv_report",
         "comparison": "compare",
-        "visualization": "visualize"
+        "visualization": "visualize",
+        "csv_report": "csv_report",
     }.get(state["mode"], END)
     return state
 
@@ -163,7 +152,7 @@ def analyze_stock_risk_trends(state: AgentState) -> AgentState:
 
     tickers = extract_tickers(state["query"])
     if len(tickers) == 0:
-        return {**state, "response": "❌ No valid stock tickers found in query."}
+        return {**state, "response": "No valid tickers detected."}
 
     ticker = tickers[0]
     days = state["days"]
@@ -171,10 +160,9 @@ def analyze_stock_risk_trends(state: AgentState) -> AgentState:
     df = fetch_prices(ticker, days)
     rets = compute_returns(df)
 
-    vol = float(rets.std() * math.sqrt(252))  
+    vol = float(rets.std() * math.sqrt(252))
     mdd = float(max_drawdown(df))
     sr = float(sharpe_ratio(rets))
-
 
     if vol < 0.2:
         risk_label = "LOW"
@@ -183,13 +171,18 @@ def analyze_stock_risk_trends(state: AgentState) -> AgentState:
     else:
         risk_label = "HIGH"
 
+    current_price = float(df["close"].iloc[-1])
+    latest_date = df["date"].iloc[-1].date()
+
     summary = (
-        f"📌 **Risk Analysis for {ticker}** (last {days} days)\n\n"
+        f"## Risk Analysis\n\n"
+        f"**Ticker:** {ticker}\n\n"
+        f"**Current Price:** {current_price:.2f} (as of {latest_date})\n\n"
         f"- Annualized Volatility: **{vol:.2%}**\n"
         f"- Max Drawdown: **{mdd:.2%}**\n"
         f"- Sharpe Ratio: **{sr:.2f}**\n"
         f"- Risk Level: **{risk_label}**\n\n"
-        f"Interpretation: Higher volatility and deeper drawdown = higher risk."
+        f"Interpretation: higher volatility and drawdown indicates higher risk."
     )
 
     return {**state, "response": summary}
@@ -200,7 +193,7 @@ def compare_stocks(state: AgentState) -> AgentState:
 
     tickers = extract_tickers(state["query"])
     if len(tickers) < 2:
-        return {**state, "response": "❌ Please provide at least 2 tickers for comparison (example: 'Compare AAPL and TSLA')."}
+        return {**state, "response": "Please enter at least 2 tickers for comparison (example: AAPL TSLA)."}
 
     days = state["days"]
     rows = []
@@ -209,23 +202,21 @@ def compare_stocks(state: AgentState) -> AgentState:
         df = fetch_prices(t, days)
         rets = compute_returns(df)
         rows.append({
-            "ticker": t,
-            "volatility": float(rets.std() * math.sqrt(252)),
-            "sharpe": float(sharpe_ratio(rets)),
-            "max_drawdown": float(max_drawdown(df)),
-            "last_close": float(df["close"].iloc[-1]),
+            "Ticker": t,
+            "Current Price": float(df["close"].iloc[-1]),
+            "Volatility": float(rets.std() * math.sqrt(252)),
+            "Sharpe": float(sharpe_ratio(rets)),
+            "Max Drawdown": float(max_drawdown(df)),
         })
 
-    comp = pd.DataFrame(rows).sort_values(by="sharpe", ascending=False)
+    comp = pd.DataFrame(rows).sort_values(by="Sharpe", ascending=False)
+    best = comp.iloc[0]["Ticker"]
+    worst = comp.iloc[-1]["Ticker"]
 
-    # create summary
-    best = comp.iloc[0]["ticker"]
-    worst = comp.iloc[-1]["ticker"]
-
-    summary = "📊 **Stock Comparison**\n\n"
+    summary = "## Comparison Report\n\n"
     summary += comp.to_markdown(index=False)
-    summary += f"\n\n✅ Best risk-adjusted (Sharpe): **{best}**"
-    summary += f"\n⚠️ Weakest risk-adjusted: **{worst}**"
+    summary += f"\n\n**Top Risk-Adjusted (Sharpe):** {best}"
+    summary += f"\n\n**Weakest Risk-Adjusted:** {worst}"
 
     return {**state, "response": summary}
 
@@ -235,10 +226,9 @@ def generate_csv(state: AgentState) -> AgentState:
 
     tickers = extract_tickers(state["query"])
     if len(tickers) == 0:
-        return {**state, "csv": "", "response": "❌ No tickers found."}
+        return {**state, "csv": "", "response": "No valid tickers detected."}
 
     days = state["days"]
-
 
     df = yf.download(
         tickers=" ".join(tickers[:5]),
@@ -250,11 +240,10 @@ def generate_csv(state: AgentState) -> AgentState:
     )
 
     if df is None or df.empty:
-        return {**state, "csv": "", "response": "❌ No data returned from Yahoo Finance."}
+        return {**state, "csv": "", "response": "No data returned from Yahoo Finance."}
 
     records = []
 
-   
     if not isinstance(df.columns, pd.MultiIndex):
         df = df.reset_index()
         for _, row in df.iterrows():
@@ -264,7 +253,6 @@ def generate_csv(state: AgentState) -> AgentState:
                 "close": row["Close"]
             })
     else:
-        
         for t in tickers[:5]:
             if t not in df.columns.get_level_values(0):
                 continue
@@ -279,12 +267,7 @@ def generate_csv(state: AgentState) -> AgentState:
     out = pd.DataFrame(records)
     csv_data = out.to_csv(index=False)
 
-    return {
-        **state,
-        "csv": csv_data,
-        "response": f"✅ CSV report generated for: {', '.join(tickers[:5])}"
-    }
-
+    return {**state, "csv": csv_data, "response": f"CSV generated for: {', '.join(tickers[:5])}"}
 
 
 def visualize_data(state: AgentState) -> AgentState:
@@ -292,10 +275,9 @@ def visualize_data(state: AgentState) -> AgentState:
 
     tickers = extract_tickers(state["query"])
     if len(tickers) == 0:
-        return {**state, "response": "❌ No tickers found for visualization."}
+        return {**state, "response": "No valid tickers detected for visualization."}
 
     days = state["days"]
-
     fig = go.Figure()
 
     for t in tickers[:5]:
@@ -303,35 +285,23 @@ def visualize_data(state: AgentState) -> AgentState:
         fig.add_trace(go.Scatter(x=df["date"], y=df["close"], mode="lines", name=t))
 
     fig.update_layout(
-        title=f"Stock Price Trend (Last {days} Days)",
+        title=f"Price Trend (Last {days} Days)",
         xaxis_title="Date",
         yaxis_title="Close Price"
     )
 
-    return {**state, "fig": fig, "response": "✅ Chart generated."}
+    return {**state, "fig": fig, "response": "Chart generated successfully."}
 
 
 def respond_llm(state: AgentState) -> AgentState:
     state["log_steps"].append("Visited: respond_llm")
 
-
     if not GROQ_AVAILABLE:
-        fallback = (
-            "**(LLM disabled: langchain_groq not installed)**\n\n"
-            + state["response"]
-            + "\n\n💡 Recommendation: Diversify, avoid high-risk concentration, and invest based on your time horizon."
-        )
-        return {**state, "response": fallback}
+        return {**state, "response": state["response"] + "\n\nNote: LLM advisory disabled (langchain_groq not installed)."}
 
- 
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     if GROQ_API_KEY.strip() == "":
-        fallback = (
-            "**(LLM disabled: GROQ_API_KEY not set)**\n\n"
-            + state["response"]
-            + "\n\n💡 Recommendation: Use risk metrics as guidance. Avoid over-leveraging."
-        )
-        return {**state, "response": fallback}
+        return {**state, "response": state["response"] + "\n\nNote: LLM advisory disabled (GROQ_API_KEY not set)."}
 
     try:
         chat = ChatGroq(
@@ -349,16 +319,17 @@ Data Summary: {state['response']}
 Give a clear, respectful summary and a direct recommendation in short bullet points.
 Avoid strong financial guarantees.
 """
+
         result = chat.invoke([HumanMessage(content=prompt)]).content.strip()
 
-        is_safe, bad_word = is_clean(result)
-        if not is_safe:
-            return {**state, "response": f"⚠️ Blocked due to unsafe word: '{bad_word}'"}
+        safe, bad_word = is_clean(result)
+        if not safe:
+            return {**state, "response": f"Blocked due to unsafe word: {bad_word}"}
 
         return {**state, "response": result}
 
     except Exception as e:
-        return {**state, "response": f"⚠️ Advisory failed: {e}"}
+        return {**state, "response": f"LLM advisory failed: {e}"}
 
 
 builder = StateGraph(AgentState)
@@ -366,51 +337,39 @@ builder.set_entry_point("router")
 
 builder.add_node("router", RunnableLambda(router))
 builder.add_node("analyze_risk", RunnableLambda(analyze_stock_risk_trends))
-builder.add_node("csv_report", RunnableLambda(generate_csv))
 builder.add_node("compare", RunnableLambda(compare_stocks))
 builder.add_node("visualize", RunnableLambda(visualize_data))
+builder.add_node("csv_report", RunnableLambda(generate_csv))
 builder.add_node("respond_llm", RunnableLambda(respond_llm))
 
 builder.add_conditional_edges("router", lambda s: s["next"], {
     "analyze_risk": "analyze_risk",
-    "csv_report": "csv_report",
     "compare": "compare",
     "visualize": "visualize",
+    "csv_report": "csv_report",
 })
 
 builder.add_edge("analyze_risk", "respond_llm")
 builder.add_edge("compare", "respond_llm")
 builder.add_edge("respond_llm", END)
-
-builder.add_edge("csv_report", END)
 builder.add_edge("visualize", END)
+builder.add_edge("csv_report", END)
 
 graph = builder.compile()
 
 
-st.set_page_config(
-    page_title="FinSight | AI Financial Advisor",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
 st.markdown("""
 <style>
     .stApp {
-        background: radial-gradient(circle at 10% 0%, #0b1220 0%, #050814 40%, #050814 100%);
+        background: radial-gradient(circle at 10% 0%, #0b1220 0%, #050814 45%, #050814 100%);
         font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
         color: #E5E7EB;
     }
-
-    /* Remove Streamlit default paddings */
     .block-container {
-        padding-top: 1.2rem !important;
-        padding-bottom: 2.5rem !important;
         max-width: 1300px;
+        padding-top: 1.2rem;
+        padding-bottom: 2.5rem;
     }
-
-    /* Navbar */
     .nav {
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -438,33 +397,25 @@ st.markdown("""
     .brand-title {
         font-size: 18px;
         font-weight: 900;
-        letter-spacing: 0.2px;
         color: #F9FAFB;
         margin: 0;
         line-height: 1;
     }
     .brand-subtitle {
         margin: 0;
-        color: rgba(229,231,235,0.7);
+        color: rgba(229,231,235,0.65);
         font-size: 12px;
         line-height: 1.2;
-    }
-    .nav-right {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        color: rgba(229,231,235,0.85);
-        font-size: 13px;
-        font-weight: 600;
     }
     .pill {
         padding: 8px 12px;
         border-radius: 999px;
         border: 1px solid rgba(255,255,255,0.10);
         background: rgba(255,255,255,0.05);
+        font-size: 12px;
+        font-weight: 800;
+        color: rgba(229,231,235,0.9);
     }
-
-    /* Hero */
     .hero {
         border-radius: 26px;
         padding: 28px 28px;
@@ -488,51 +439,18 @@ st.markdown("""
         line-height: 1.6;
         max-width: 850px;
     }
-    .hero-tags {
-        margin-top: 16px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-    }
     .tag {
         padding: 9px 14px;
         border-radius: 999px;
         border: 1px solid rgba(255,255,255,0.10);
         background: rgba(255,255,255,0.05);
         font-size: 12px;
-        font-weight: 700;
+        font-weight: 800;
         color: rgba(229,231,235,0.9);
+        display: inline-block;
+        margin-top: 12px;
+        margin-right: 8px;
     }
-
-    /* Cards grid */
-    .grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 14px;
-        margin-bottom: 18px;
-    }
-    .feature-card {
-        border-radius: 22px;
-        background: rgba(255,255,255,0.04);
-        border: 1px solid rgba(255,255,255,0.08);
-        padding: 16px 18px;
-        box-shadow: 0 16px 45px rgba(0,0,0,0.25);
-    }
-    .feature-title {
-        font-size: 14px;
-        font-weight: 900;
-        margin: 0 0 4px 0;
-        color: #F9FAFB;
-        letter-spacing: -0.2px;
-    }
-    .feature-desc {
-        font-size: 13px;
-        margin: 0;
-        color: rgba(229,231,235,0.72);
-        line-height: 1.5;
-    }
-
-    /* Input / Output panels */
     .panel {
         border-radius: 26px;
         padding: 18px 18px;
@@ -543,27 +461,10 @@ st.markdown("""
     .panel-title {
         font-size: 15px;
         font-weight: 950;
-        margin: 0 0 12px 0;
         color: #F9FAFB;
+        margin: 0 0 12px 0;
     }
-
-    /* Inputs */
-    div[data-baseweb="input"] > div {
-        border-radius: 16px !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
-        background: rgba(0,0,0,0.25) !important;
-        color: #E5E7EB !important;
-    }
-    div[data-baseweb="select"] > div {
-        border-radius: 16px !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
-        background: rgba(0,0,0,0.25) !important;
-        color: #E5E7EB !important;
-    }
-
-    /* Run button */
     div.stButton > button {
-        width: 100%;
         border-radius: 16px;
         height: 52px;
         font-size: 15px;
@@ -571,37 +472,8 @@ st.markdown("""
         color: #0B1220;
         background: linear-gradient(135deg, #22C55E 0%, #3B82F6 100%);
         border: none;
-        box-shadow: 0 18px 45px rgba(34,197,94,0.12);
         transition: 0.2s;
-    }
-    div.stButton > button:hover {
-        transform: translateY(-1px);
-        opacity: 0.98;
-    }
-
-    /* Tabs */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 999px !important;
-        border: 1px solid rgba(255,255,255,0.10) !important;
-        background: rgba(255,255,255,0.05) !important;
-        padding: 10px 14px !important;
-        color: rgba(229,231,235,0.9) !important;
-        font-weight: 800 !important;
-    }
-
-    /* Footer */
-    .footer {
-        margin-top: 20px;
-        color: rgba(229,231,235,0.55);
-        font-size: 12px;
-        text-align: center;
-    }
-
-    @media (max-width: 1100px) {
-        .grid { grid-template-columns: 1fr; }
+        width: 100%;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -615,79 +487,70 @@ st.markdown("""
         <div class="brand-badge"></div>
         <div>
             <p class="brand-title">FinSight</p>
-            <p class="brand-subtitle">AI financial advisor</p>
+            <p class="brand-subtitle">AI Financial Advisor</p>
         </div>
     </div>
-    <div class="nav-right">
-        <div class="pill">Data: Yahoo Finance</div>
-        <div class="pill">Workflow: LangGraph</div>
-        <div class="pill">UI: Streamlit</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div class="pill">Yahoo Finance</div>
+        <div class="pill">LangGraph</div>
+        <div class="pill">Streamlit</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class="hero">
-    <h1>Smart, fast and clean stock insights.</h1>
+    <h1>Stock insights that feel effortless.</h1>
     <p>
-        FinSight is a production-ready AI agent interface for stock risk analysis, comparison, visualization,
-        and CSV reporting. Powered by real historical market data with an optional LLM advisory layer.
+        Enter one or more tickers and run analysis instantly.
+        No command keywords needed. Export reports, visualize trends and compare risk metrics in one interface.
     </p>
-    <div class="hero-tags">
-        <span class="tag">Risk analysis</span>
-        <span class="tag">Stock comparison</span>
-        <span class="tag">Trend visualization</span>
-        <span class="tag">CSV reporting</span>
-    </div>
+    <span class="tag">Risk analysis</span>
+    <span class="tag">Comparison</span>
+    <span class="tag">Visualization</span>
+    <span class="tag">CSV export</span>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="grid">
-  <div class="feature-card">
-    <div class="feature-title">Risk Engine</div>
-    <p class="feature-desc">Annualized volatility, Sharpe ratio and max drawdown to understand risk clearly.</p>
-  </div>
-  <div class="feature-card">
-    <div class="feature-title">Comparison Suite</div>
-    <p class="feature-desc">Compare up to 5 instruments with consistent metrics and clear ranking.</p>
-  </div>
-  <div class="feature-card">
-    <div class="feature-title">Reporting</div>
-    <p class="feature-desc">Export CSV datasets for your documentation, analysis or project submission.</p>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-left, right = st.columns([1.05, 1.55], gap="large")
+left, right = st.columns([1.05, 1.65], gap="large")
 
 with left:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown('<div class="panel-title">Run analysis</div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel-title">Input</div>', unsafe_allow_html=True)
 
     query = st.text_input(
-        label="Query",
-        value="Compare AAPL and TSLA",
-        placeholder="Example: Analyze AAPL | Compare AAPL TSLA MSFT | Show TCS.NS INFY.NS"
+        "Tickers",
+        value="AAPL TSLA",
+        placeholder="Example: AAPL | AAPL TSLA MSFT | TCS.NS INFY.NS"
     )
 
-    mode = st.selectbox(
-        "Mode",
-        ["risk_analysis", "comparison", "visualization", "csv_report"],
-        index=1
-    )
+    days = st.slider("History window (days)", min_value=3, max_value=365, value=30)
 
-    days = st.slider("History (days)", min_value=3, max_value=365, value=30)
-
-    st.write("")
-    run = st.button("Run")
+    tickers_preview = extract_tickers(query)
+    if tickers_preview:
+        st.caption("Detected tickers: " + ", ".join(tickers_preview[:10]))
+    else:
+        st.caption("Detected tickers: none")
 
     st.write("")
-    st.markdown("**Examples**")
-    st.code("Analyze AAPL", language="text")
-    st.code("Compare AAPL TSLA MSFT", language="text")
-    st.code("Show TCS.NS INFY.NS", language="text")
-    st.code("CSV report for AAPL TSLA", language="text")
+
+    c1, c2 = st.columns(2)
+    c3, c4 = st.columns(2)
+
+    run_risk = c1.button("Risk analysis")
+    run_compare = c2.button("Compare")
+    run_viz = c3.button("Visualize")
+    run_csv = c4.button("Export CSV")
+
+    mode = None
+    if run_risk:
+        mode = "risk_analysis"
+    elif run_compare:
+        mode = "comparison"
+    elif run_viz:
+        mode = "visualization"
+    elif run_csv:
+        mode = "csv_report"
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -695,7 +558,7 @@ with right:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.markdown('<div class="panel-title">Results</div>', unsafe_allow_html=True)
 
-    if run:
+    if mode:
         with st.spinner("Processing request..."):
             try:
                 result = graph.invoke({
@@ -716,8 +579,6 @@ with right:
                     "response": result["response"]
                 })
 
-                st.success("Completed successfully.")
-
                 t1, t2, t3, t4 = st.tabs(["Summary", "Chart", "CSV", "Trace"])
 
                 with t1:
@@ -727,7 +588,7 @@ with right:
                     if result.get("fig") is not None:
                         st.plotly_chart(result["fig"], use_container_width=True)
                     else:
-                        st.info("No chart generated for this mode.")
+                        st.info("No chart generated for this action.")
 
                 with t3:
                     if result.get("csv"):
@@ -738,7 +599,7 @@ with right:
                             mime="text/csv"
                         )
                     else:
-                        st.info("No CSV generated for this mode.")
+                        st.info("No CSV generated for this action.")
 
                 with t4:
                     if result.get("log_steps"):
@@ -749,9 +610,8 @@ with right:
 
             except Exception as e:
                 st.error(f"Application error: {e}")
-
     else:
-        st.info("Enter a query on the left and run analysis to view results.")
+        st.info("Enter tickers on the left and select an action.")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -762,8 +622,8 @@ with st.expander("Recent activity", expanded=False):
     else:
         for chat in st.session_state.chat_memory[::-1][:10]:
             st.markdown(f"**{chat['timestamp']}**")
-            st.markdown(f"Mode: `{chat['mode']}`")
-            st.markdown(f"Query: `{chat['query']}`")
+            st.markdown(f"Action: `{chat['mode']}`")
+            st.markdown(f"Tickers: `{chat['query']}`")
             st.markdown("---")
 
-st.markdown('<div class="footer">FinSight • AI Financial Advisor • Streamlit + LangGraph</div>', unsafe_allow_html=True)
+st.caption("FinSight • AI Financial Advisor • Streamlit + LangGraph")
