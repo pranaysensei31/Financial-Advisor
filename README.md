@@ -1,8 +1,10 @@
 # Financial-Advisor
 FinSight: AI-Driven Financial Analytics and Virtual Trading Platform
 Overview
+
 FinSight is an AI-driven financial analytics and virtual trading platform designed to help users analyze financial assets, understand investment risk, and practice trading without financial exposure. The system integrates real-time market data, quantitative risk metrics, and simulated trading to provide an educational and decision-support environment.
 The platform enables users to evaluate assets using standard financial metrics such as returns, volatility, Sharpe ratio, maximum drawdown, and CAGR, while also providing qualitative AI-generated explanations to improve interpretability.
+
 Features
 • Real-time financial data integration (stocks, indices, mutual funds, commodities)
 • Quantitative risk analysis (Volatility, Sharpe Ratio, Maximum Drawdown, CAGR)
@@ -13,7 +15,9 @@ Features
 • Portfolio tracking and performance monitoring
 • CSV export for offline analysis
 • Multi-asset support
+
 System Architecture
+
 The system consists of the following modules:
 Data Acquisition Module
 Fetches real-time and historical financial data from Yahoo Finance APIs.
