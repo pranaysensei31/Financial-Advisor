@@ -111,4 +111,4 @@ Paper Trading Features
 
 
 <img width="431" height="660" alt="Screenshot 2026-02-18 at 11 53 59 AM" src="https://github.com/user-attachments/assets/36453ae1-8341-40a5-8884-64a7e6b5f073" />
-
+https://docs.google.com/presentation/d/1OrXa7jer5iER-Fu9cnVoQILuXBn9oiI5/edit?usp=share_link&ouid=106547257502148651109&rtpof=true&sd=true
