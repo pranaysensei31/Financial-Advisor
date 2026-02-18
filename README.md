@@ -57,3 +57,6 @@ Paper Trading Features
 • Portfolio tracking
 • Profit and loss calculation
 • Risk-free trading environment
+<img width="1469" height="782" alt="Screenshot 2026-02-18 at 11 29 48 AM" src="https://github.com/user-attachments/assets/22919701-7c50-4ef3-a8e7-be0eb178dc34" />
+
+<img width="1328" height="695" alt="Screenshot 2026-02-18 at 11 28 19 AM" src="https://github.com/user-attachments/assets/da0b6f4e-2322-42f2-9e7c-56fd344b0784" />
